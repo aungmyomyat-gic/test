@@ -1,0 +1,54 @@
+services:
+  mycar-backend:
+    build:
+      context: .
+      dockerfile: ./infra/java/Dockerfile
+    container_name: mycar-backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      mycar-db:
+        condition: service_healthy  
+      rabbitmq:
+        condition: service_healthy
+
+  mycar-db:
+    build:
+      context: ./infra/db
+    container_name: mycar-db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: mycar
+      MYSQL_USER: mycaruser
+      MYSQL_PASSWORD: mycarpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mycar-db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672" 
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: mycaradmin
+      RABBITMQ_DEFAULT_PASS: mycarpass
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mycar-db-data:

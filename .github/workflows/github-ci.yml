@@ -1,0 +1,55 @@
+name: Lashic_Moshikomi_Mypage_EC2_CICD
+
+on:
+  push:
+    tags:
+      - 'v1.1.*'
+      - 'v1.2.*'
+      - 'p1.*'
+
+env:
+  IMAGE_NAME: lashic_moshikomi_mypage
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ vars.ECR_REGISTRY }}
+
+      - name: Build and Tag Docker Image
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          docker build -t $IMAGE_NAME:$TAG -f infra/java/Dockerfile .
+          docker tag $IMAGE_NAME:$TAG ${{ vars.ECR_REPOSITORY }}:$TAG
+          docker tag $IMAGE_NAME:$TAG ${{ vars.ECR_REPOSITORY }}:latest
+
+      - name: Push Docker Image to Amazon ECR
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          docker push ${{ vars.ECR_REPOSITORY }}:$TAG
+          docker push ${{ vars.ECR_REPOSITORY }}:latest
+
+      - name: SSH into EC2 and Deploy
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            TAG=${GITHUB_REF#refs/tags/}
+            cd ~/lashic_moshikomi_mypage
+            echo "IMAGE_TAG=$TAG" > .env
+            docker compose pull
+            docker compose up -d
